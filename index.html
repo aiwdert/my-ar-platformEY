@@ -1,0 +1,243 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <!-- السطر التالي مهم جداً لضبط مقاسات الجوال ومنع التقريب التلقائي -->
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>محاكي الانشطار النووي - متوافق مع الجوال والكمبيوتر</title>
+    <style>
+        body { margin: 0; overflow: hidden; background-color: #050505; font-family: sans-serif; color: white; user-select: none; }
+        #info {
+            position: absolute; top: 15px; width: 100%; text-align: center;
+            font-size: 16px; pointer-events: none; text-shadow: 1px 1px 3px black; z-index: 10;
+            padding: 0 10px; box-sizing: border-box; line-height: 1.4;
+        }
+        button {
+            position: absolute; bottom: 30px; left: 50%; transform: translateX(-50%);
+            padding: 16px 32px; font-size: 18px; background-color: #ff3333; color: white;
+            border: none; border-radius: 8px; cursor: pointer; font-weight: bold; 
+            box-shadow: 0 0 15px rgba(255,51,51,0.6); z-index: 10;
+        }
+        button:hover { background-color: #ff5555; }
+        canvas { display: block; }
+    </style>
+</head>
+<body>
+
+    <div id="info">محاكي الانشطار: اضغط على الزر أو المَس أي مكان على الشاشة لإطلاق النيوترون!</div>
+    <button id="fireBtn">إطلاق نيوترون</button>
+
+    <canvas id="fissionCanvas"></canvas>
+
+    <script>
+        const canvas = document.getElementById('fissionCanvas');
+        const ctx = canvas.getContext('2d');
+
+        function resize() {
+            canvas.width = window.innerWidth;
+            canvas.height = window.innerHeight;
+            // إعادة توزيع الذرات لتتناسب مع أبعاد الشاشة الجديدة (جوال أو كمبيوتر)
+            if(atoms.length > 0) init(); 
+        }
+        window.addEventListener('resize', resize);
+
+        let atoms = [];
+        let neutrons = [];
+        let fragments = [];
+        let particles = [];
+
+        class Atom {
+            constructor(x, y) {
+                this.x = x;
+                this.y = y;
+                // تقليص الحجم قليلاً على الجوال ليتناسب مع الشاشات الصغيرة
+                this.radius = window.innerWidth < 600 ? 15 : 20; 
+                this.active = true;
+            }
+
+            draw() {
+                if (!this.active) return;
+                ctx.beginPath();
+                let gradient = ctx.createRadialGradient(this.x - 3, this.y - 3, 2, this.x, this.y, this.radius);
+                gradient.addColorStop(0, '#a6ff1a');
+                gradient.addColorStop(0.4, '#33cc33');
+                gradient.addColorStop(1, '#0c3300');
+                ctx.arc(this.x, this.y, this.radius, 0, Math.PI * 2);
+                ctx.fillStyle = gradient;
+                ctx.fill();
+                ctx.closePath();
+            }
+        }
+
+        class Neutron {
+            constructor(x, y, vx, vy) {
+                this.x = x;
+                this.y = y;
+                this.vx = vx;
+                this.vy = vy;
+                this.radius = window.innerWidth < 600 ? 4 : 5;
+            }
+
+            update() {
+                this.x += this.vx;
+                this.y += this.vy;
+            }
+
+            draw() {
+                ctx.beginPath();
+                let grad = ctx.createRadialGradient(this.x - 1, this.y - 1, 1, this.x, this.y, this.radius);
+                grad.addColorStop(0, '#ffffff');
+                grad.addColorStop(0.6, '#aaaaaa');
+                grad.addColorStop(1, '#333333');
+                ctx.arc(this.x, this.y, this.radius, 0, Math.PI * 2);
+                ctx.fillStyle = grad;
+                ctx.fill();
+                ctx.closePath();
+            }
+        }
+
+        class Fragment {
+            constructor(x, y, vx, vy) {
+                this.x = x; this.y = y; this.vx = vx; this.vy = vy;
+                this.radius = window.innerWidth < 600 ? 9 : 12; 
+                this.life = 35;
+                this.color = Math.random() > 0.5 ? '#00ccff' : '#cc33ff'; 
+            }
+            update() {
+                this.x += this.vx; this.y += this.vy; this.life--;
+                this.radius = Math.max(1, this.radius - 0.25);
+            }
+            draw() {
+                if (this.life <= 0) return;
+                ctx.beginPath();
+                ctx.arc(this.x, this.y, this.radius, 0, Math.PI * 2);
+                ctx.fillStyle = this.color;
+                ctx.fill();
+                ctx.closePath();
+            }
+        }
+
+        class Particle {
+            constructor(x, y) {
+                this.x = x; this.y = y;
+                this.vx = (Math.random() - 0.5) * 6;
+                this.vy = (Math.random() - 0.5) * 6;
+                this.life = 15;
+            }
+            update() { this.x += this.vx; this.y += this.vy; this.life--; }
+            draw() {
+                ctx.beginPath();
+                ctx.arc(this.x, this.y, 1.5, 0, Math.PI * 2);
+                ctx.fillStyle = `rgba(255, 130, 0, ${this.life/15})`;
+                ctx.fill();
+                ctx.closePath();
+            }
+        }
+
+        function init() {
+            atoms = []; neutrons = []; fragments = []; particles = [];
+            
+            // تعديل مصفوفة التراص ديناميكياً حسب عرض الشاشة
+            const isMobile = window.innerWidth < 600;
+            const rows = isMobile ? 7 : 6;  
+            const cols = isMobile ? 6 : 10; 
+            
+            const spacingX = isMobile ? 38 : 48; 
+            const spacingY = isMobile ? 38 : 46;
+
+            const centerX = canvas.width / 2;
+            const centerY = canvas.height / 2;
+
+            const startX = centerX - ((cols - 1) * spacingX) / 2;
+            const startY = centerY - ((rows - 1) * spacingY) / 2;
+
+            for (let r = 0; r < rows; r++) {
+                for (let c = 0; c < cols; c++) {
+                    let offsetX = (r % 2 === 0) ? spacingX * 0.3 : 0;
+                    let x = startX + (c * spacingX) + offsetX;
+                    let y = startY + (r * spacingY);
+                    atoms.push(new Atom(x, y));
+                }
+            }
+        }
+
+        function startFission() {
+            const activeCount = atoms.filter(a => a.active).length;
+            if (activeCount === 0) init();
+            neutrons.push(new Neutron(10, canvas.height / 2 + (Math.random() - 0.5) * 40, 5, 0));
+        }
+
+        // تفعيل الإطلاق عند لمس الشاشة في أي مكان (للجوال) أو الضغط بالماوس
+        window.addEventListener('click', (e) => {
+            // نتأكد فقط أنه لم يضغط على الزر نفسه لكي لا يطلق مرتين
+            if(e.target.id !== 'fireBtn') {
+                startFission();
+            }
+        });
+        document.getElementById('fireBtn').addEventListener('click', startFission);
+
+        function explodeAtom(atom) {
+            atom.active = false;
+            let angle = Math.random() * Math.PI * 2;
+            fragments.push(new Fragment(atom.x, atom.y, Math.cos(angle) * 2.5, Math.sin(angle) * 2.5));
+            fragments.push(new Fragment(atom.x, atom.y, -Math.cos(angle) * 2.5, -Math.sin(angle) * 2.5));
+
+            for (let i = 0; i < 3; i++) {
+                let nAngle = Math.random() * Math.PI * 2;
+                neutrons.push(new Neutron(atom.x, atom.y, Math.cos(nAngle) * 3.8, Math.sin(nAngle) * 3.8));
+            }
+            for (let i = 0; i < 5; i++) {
+                particles.push(new Particle(atom.x, atom.y));
+            }
+        }
+
+        function animate() {
+            ctx.fillStyle = '#050505';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+            atoms.forEach(atom => atom.draw());
+
+            for (let i = neutrons.length - 1; i >= 0; i--) {
+                let n = neutrons[i];
+                n.update();
+                n.draw();
+
+                for (let j = 0; j < atoms.length; j++) {
+                    let atom = atoms[j];
+                    if (atom.active) {
+                        let dx = n.x - atom.x;
+                        let dy = n.y - atom.y;
+                        let distance = Math.sqrt(dx*dx + dy*dy);
+
+                        if (distance < (atom.radius + n.radius)) {
+                            explodeAtom(atom);
+                            neutrons.splice(i, 1);
+                            break;
+                        }
+                    }
+                }
+
+                if (n && (n.x < 0 || n.x > canvas.width || n.y < 0 || n.y > canvas.height)) {
+                    neutrons.splice(i, 1);
+                }
+            }
+
+            for (let i = fragments.length - 1; i >= 0; i--) {
+                let f = fragments[i]; f.update(); f.draw();
+                if (f.life <= 0) fragments.splice(i, 1);
+            }
+
+            for (let i = particles.length - 1; i >= 0; i--) {
+                let p = particles[i]; p.update(); p.draw();
+                if (p.life <= 0) particles.splice(i, 1);
+            }
+
+            requestAnimationFrame(animate);
+        }
+
+        // التشغيل المبدئي
+        resize();
+        animate();
+    </script>
+</body>
+</html>
